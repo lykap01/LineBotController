@@ -1,0 +1,59 @@
+name: Build APK
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unzip the project
+        run: |
+          z=$(find . -maxdepth 2 -name "*.zip" -not -path "./.git/*" | head -n 1)
+          if [ -z "$z" ]; then
+            echo "::error::No zip file found. Upload LineBotController.zip to this repository."
+            exit 1
+          fi
+          echo "Unzipping $z"
+          rm -rf _project
+          mkdir _project
+          unzip -q "$z" -d _project
+
+      - name: Find the project folder
+        id: find
+        run: |
+          f=$(find _project -name settings.gradle | head -n 1)
+          if [ -z "$f" ]; then
+            echo "::error::settings.gradle is not inside the zip. Use the LineBotController.zip file as downloaded."
+            exit 1
+          fi
+          d=$(dirname "$f")
+          if [ -z "$(find "$d/app/src/main/java" -name MainActivity.java 2>/dev/null)" ]; then
+            echo "::error::The app folder is missing inside the zip. Use the LineBotController.zip file as downloaded."
+            exit 1
+          fi
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+          echo "Project folder: $d"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build APK
+        working-directory: ${{ steps.find.outputs.dir }}
+        run: gradle assembleRelease --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LineBotController-apk
+          path: '_project/**/app/build/outputs/apk/release/*.apk'
